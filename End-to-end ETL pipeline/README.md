@@ -34,7 +34,6 @@ The architecture follows an **event-driven ETL design**, triggered automatically
   - [Monthly Sales Trend](#2-monthly-sales-trend)
   - [Most Profitable Product Categories](#3️-most-profitable-product-categories)
   - [Customer Demographics by Revenue](#4️-customer-demographics-by-revenue)
-- [Visualization – Amazon QuickSight](#visualization--amazon-quicksight)
 
 
 ---
@@ -60,7 +59,8 @@ Bikes;Mountain Bikes;Mountain-200 Black, 46;1;1252;2295;561;1252;1813
 <a id="architecture-overview"></a>
 ##  Architecture Overview
 
-<img width="985" height="314" alt="aws_flow" src="https://github.com/user-attachments/assets/1e13bf6d-211d-49fe-a434-fd491151a769" />
+<img width="853" height="400" alt="Diagramma senza titolo drawio2" src="https://github.com/user-attachments/assets/03a6350a-b5d5-491e-aae2-cf325b8fd249" />
+
 
 
 
@@ -403,17 +403,3 @@ ORDER BY total_revenue DESC;
 
 
 
-
-## Visualization – Amazon QuickSight
-
-QuickSight connects to Athena to create dashboards such as:
-
-  - Revenue by time
-
-  - Sales by country and category
-
-  -  Profit distribution
-
-  - Customer demographics
-
-This completes the end-to-end analytics workflow from raw ingestion to BI dashboards.
