@@ -5,6 +5,38 @@ This project implements a **fully serverless ETL data pipeline on AWS** to proce
 
 The architecture follows an **event-driven ETL design**, triggered automatically when new data is uploaded to Amazon S3.
 
+
+## Table of Contents
+
+- [Dataset](#dataset)
+- [Architecture Overview](#architecture-overview)
+- [IAM & Security Setup](#iam--security-setup)
+- [S3 Data Lake Structure](#s3-data-lake-structure)
+- [Event-Driven Ingestion (S3 → Lambda)](#event-driven-ingestion-s3--lambda)
+- [Lambda Transformation Logic](#lambda-transformation-logic)
+  - [File Validation](#1️-file-validation)
+  - [Data Loading](#2️-data-loading)
+  - [Data Cleaning & Transformation](#3️-data-cleaning--transformation)
+  - [Parquet Conversion](#4️-parquet-conversion)
+  - [Partitioned Storage](#5️-partitioned-storage)
+  - [Lambda Dependencies (AWS Layer)](#lambda-dependencies-aws-layer)
+  - [Lambda Role and Timeout Settings](#lambda-role-and-timeout-settings)
+- [Data Cataloging with AWS Glue](#data-cataloging-with-aws-glue)
+- [Query Layer – Amazon Athena](#query-layer--amazon-athena)
+- [Data Quality Checks](#data-quality-checks)
+  - [Null & Missing Values Check](#null--missing-values-check)
+  - [Invalid Revenue & Profit Check](#invalid-revenue--profit-check)
+  - [Logical Consistency Check (Revenue vs Cost)](#logical-consistency-check-revenue-vs-cost)
+  - [Duplicate Records Detection](#duplicate-records-detection)
+  - [Date Format Validation](#date-format-validation)
+- [Business-Oriented Athena Queries](#business-oriented-athena-queries)
+  - [Total Revenue by Country](#1-total-revenue-by-country)
+  - [Monthly Sales Trend](#2-monthly-sales-trend)
+  - [Most Profitable Product Categories](#3️-most-profitable-product-categories)
+  - [Customer Demographics by Revenue](#4️-customer-demographics-by-revenue)
+- [Visualization – Amazon QuickSight](#visualization--amazon-quicksight)
+
+
 ---
 
 ##  Dataset
@@ -25,10 +57,11 @@ Bikes;Mountain Bikes;Mountain-200 Black, 46;1;1252;2295;561;1252;1813
 
 
 ---
-
+<a id="architecture-overview"></a>
 ##  Architecture Overview
 
-(foto architettura)
+<img width="985" height="314" alt="aws_flow" src="https://github.com/user-attachments/assets/1e13bf6d-211d-49fe-a434-fd491151a769" />
+
 
 
 - **Pipeline Type:** ETL (Extract → Transform → Load)  
@@ -39,7 +72,7 @@ Bikes;Mountain Bikes;Mountain-200 Black, 46;1;1252;2295;561;1252;1813
 - **Visualization:** Amazon QuickSight  
 
 ---
-
+<a id="iam--security-setup"></a>
 ##  IAM & Security Setup
 
 - An **Admin user** creates:
@@ -56,7 +89,7 @@ This ensures **secure and isolated access** to the data platform.
 
 ##  S3 Data Lake Structure
 
-**Bucket Name:**  etl-bikestore
+**Bucket Name:**  ```etl-bikestore```
 
 
 
@@ -64,7 +97,7 @@ This ensures **secure and isolated access** to the data platform.
 
 ##  Event-Driven Ingestion (S3 → Lambda)
 
-When a new CSV file is uploaded to: **s3://etl-bikestore/raw_orders/**
+When a new CSV file is uploaded to: ```s3://etl-bikestore/raw_orders/```
 
 it automatically triggers the Lambda function:
 
@@ -136,6 +169,13 @@ The Lambda function performs the following steps:
 
 ### 1️ File Validation
 - Ensures the uploaded file is a `.csv`
+          
+```python
+  if not file_name.lower().endswith('.csv'):
+            print("Not a CSV file, skipping.")
+            return {'statusCode': 200, 'body': 'Skipped non-CSV file'}
+        }
+```
 
 ### 2️ Data Loading
 - Reads data from S3 using `boto3`
@@ -254,3 +294,183 @@ This avoids:
 ### Lambda Role and Timeout settings
 It was granted ```AmazonS3FullAccess``` to the ```manipulator-role-dnllsrr``` and the **Timeout** in the Edit basic settings was increased up to 30 seconds.
 
+
+## Data Cataloging with AWS Glue
+
+A Glue crawler automatically detects schema and partitions.
+
+**Crawler Name:** etl_bikestore_data
+
+**IAM Role:** AWSGlueServiceRole-bikeproject
+
+**Database:** db_bikestore
+
+**Data Source:**
+```
+s3://etl-bikestore/orders_parquet_datalake/
+```
+
+**Recrawl Policy:** New folders only
+
+**Schedule:** On-demand
+
+After each run:
+
+  - Schema is automatically inferred
+  - Tables and partitions are updated
+  - Data becomes immediately queryable in Athena
+
+
+## Query Layer – Amazon Athena
+
+Amazon Athena is used as the **serverless SQL query engine** for this project. It allows running standard ANSI SQL queries directly on top of data stored in Amazon S3 without requiring any infrastructure management.
+
+In this pipeline, Athena queries the **Parquet-based analytical data lake** stored in:
+
+```
+s3://etl-bikestore/query_results/
+```
+and uses the **AWS Glue Data Catalog** as the metastore to resolve table schemas and partitions.
+
+
+## Data Quality Checks
+To ensure the reliability and correctness of analytical results, multiple **data quality validation checks** are performed directly in Amazon Athena. These checks help detect ingestion errors, transformation issues, and anomalous business values.
+
+
+###  Null & Missing Values Check
+
+**Business Risk:**  
+Null values in key fields can break dashboards and lead to incorrect aggregations.
+
+```sql
+SELECT 
+    COUNT(*) AS total_rows,
+    SUM(CASE WHEN date IS NULL THEN 1 ELSE 0 END) AS null_dates,
+    SUM(CASE WHEN revenue IS NULL THEN 1 ELSE 0 END) AS null_revenue,
+    SUM(CASE WHEN country IS NULL THEN 1 ELSE 0 END) AS null_country,
+    SUM(CASE WHEN product_category IS NULL THEN 1 ELSE 0 END) AS null_product_category
+FROM db_bikestore.bike_orders;
+```
+
+### Invalid Revenue & Profit Check
+
+Business Risk:
+Negative revenue or profit usually indicates corrupted data or ingestion issues.
+```sql
+SELECT *
+FROM db_bikestore.bike_orders
+WHERE revenue < 0
+   OR profit < 0;
+```
+
+### Logical Consistency Check (Revenue vs Cost)
+
+**Business Rule:**
+Revenue should always be greater than or equal to cost.
+```sql
+SELECT *
+FROM db_bikestore.bike_orders
+WHERE revenue < cost;
+```
+
+
+### Duplicate Records Detection
+
+**Business Risk:**
+Duplicate rows inflate revenue and distort all KPIs.
+```sql
+SELECT 
+    date,
+    product,
+    country,
+    COUNT(*) AS duplicate_count
+FROM db_bikestore.bike_orders
+GROUP BY date, product, country
+HAVING COUNT(*) > 1;
+```
+
+
+### Date Format Validation
+
+**Business Risk:**
+Malformed dates break time-series analysis and partition filtering.
+```sql
+SELECT *
+FROM db_bikestore.bike_orders
+WHERE TRY_CAST(date AS DATE) IS NULL;
+```
+
+
+##  Business-Oriented Athena Queries
+
+Below are real-world business queries that can be executed on the `bike_orders` Athena table.
+
+---
+
+### 1) Total Revenue by Country
+
+Which countries generate the highest revenue?
+
+```sql
+SELECT 
+    country,
+    SUM(revenue) AS total_revenue
+FROM db_bikestore.bike_orders
+GROUP BY country
+ORDER BY total_revenue DESC;
+```
+
+
+### 2) Monthly Sales Trend
+
+How does revenue evolve over time?
+```sql
+SELECT 
+    year,
+    month,
+    SUM(revenue) AS monthly_revenue
+FROM db_bikestore.bike_orders
+GROUP BY year, month
+ORDER BY year, month;
+```
+
+### 3️) Most Profitable Product Categories
+Which product categories generate the most profit?
+
+```sql
+SELECT 
+    product_category,
+    SUM(profit) AS total_profit
+FROM db_bikestore.bike_orders
+GROUP BY product_category
+ORDER BY total_profit DESC;
+```
+
+### 4️) Customer Demographics by Revenue
+Which customer age groups generate the most revenue?
+
+```sql
+SELECT 
+    age_group,
+    SUM(revenue) AS total_revenue
+FROM db_bikestore.bike_orders
+GROUP BY age_group
+ORDER BY total_revenue DESC;
+```
+
+
+
+
+## Visualization – Amazon QuickSight
+
+QuickSight connects to Athena to create dashboards such as:
+
+  - Revenue by time
+
+  - Sales by country and category
+
+  -  Profit distribution
+
+  - Customer demographics
+
+This completes the end-to-end analytics workflow from raw ingestion to BI dashboards.
