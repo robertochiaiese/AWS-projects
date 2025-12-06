@@ -1,7 +1,7 @@
 
 #  AWS Serverless ETL Pipeline – Bike Store Analytics
 
-This project implements a **fully serverless ETL data pipeline on AWS** to process, transform, and analyze bike sales data from Europe. The pipeline ingests raw CSV files, transforms them into optimized Parquet format using AWS Lambda and Pandas, catalogs them with AWS Glue, and enables analytics using Amazon Athena and visualization through Amazon QuickSight.
+This project implements a **fully serverless ETL data pipeline on AWS** to process, transform, and analyze bike sales data from Europe. The pipeline ingests raw CSV files, transforms them into optimized Parquet format using AWS Lambda and Pandas, catalogs them with AWS Glue, and enables analytics using Amazon Athena.
 
 The architecture follows an **event-driven ETL design**, triggered automatically when new data is uploaded to Amazon S3.
 
@@ -69,7 +69,6 @@ Bikes;Mountain Bikes;Mountain-200 Black, 46;1;1252;2295;561;1252;1813
 - **Storage Format:** Parquet  
 - **Partitioning:** Daily snapshots  
 - **Query Engine:** Amazon Athena  
-- **Visualization:** Amazon QuickSight  
 
 ---
 <a id="iam--security-setup"></a>
