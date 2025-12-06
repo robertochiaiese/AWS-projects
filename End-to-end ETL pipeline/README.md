@@ -89,19 +89,21 @@ This ensures **secure and isolated access** to the data platform.
 
 ##  S3 Data Lake Structure
 
-**Bucket Name:**  ```etl-bikestore```
+**Bucket Name:**  ```etl-bikesales```
 
+<img width="1450" height="179" alt="image" src="https://github.com/user-attachments/assets/78fe1b60-2b1b-48b8-a323-5a9037c0720b" />
 
 
 ---
 
 ##  Event-Driven Ingestion (S3 → Lambda)
 
-When a new CSV file is uploaded to: ```s3://etl-bikestore/raw_orders/```
-
+When a new CSV file is uploaded to: ```s3://etl-bikesales/raw_orders/```,
 it automatically triggers the Lambda function:
 
 **Lambda Name:** `manipulator`
+
+<img width="1812" height="377" alt="image" src="https://github.com/user-attachments/assets/8b998222-8a9b-4106-a50c-abbc0a3dd9d9" />
 
 ### Trigger Configuration
 - **Event Type:** `s3:ObjectCreated:*`
@@ -297,18 +299,15 @@ It was granted ```AmazonS3FullAccess``` to the ```manipulator-role-dnllsrr``` an
 
 ## Data Cataloging with AWS Glue
 
-A Glue crawler automatically detects schema and partitions.
+A Glue crawler that automatically detects schema and partitions is created with the following properties:
 
-**Crawler Name:** etl_bikestore_data
+**Crawler Name:** etl_bikesales_data
 
 **IAM Role:** AWSGlueServiceRole-bikeproject
 
-**Database:** db_bikestore
+**Database:** db_bikesales ( created on the go)
 
-**Data Source:**
-```
-s3://etl-bikestore/orders_parquet_datalake/
-```
+**Data Source:** ```s3://etl-bikesales/orders_parquet_datalake/```
 
 **Recrawl Policy:** New folders only
 
@@ -319,6 +318,11 @@ After each run:
   - Schema is automatically inferred
   - Tables and partitions are updated
   - Data becomes immediately queryable in Athena
+<img width="754" height="643" alt="image" src="https://github.com/user-attachments/assets/88f53be6-07da-4fb4-bb64-3119361bcb1e" />
+
+
+Example of patitions created at each run when a new orders' file is uploaded into the s3 bucket:
+<img width="741" height="147" alt="image" src="https://github.com/user-attachments/assets/1c5f28e6-af34-44db-8dfc-fd81a20ad4a2" />
 
 
 ## Query Layer – Amazon Athena
@@ -328,82 +332,15 @@ Amazon Athena is used as the **serverless SQL query engine** for this project. I
 In this pipeline, Athena queries the **Parquet-based analytical data lake** stored in:
 
 ```
-s3://etl-bikestore/query_results/
+s3://etl-bikesales/query_results/
 ```
 and uses the **AWS Glue Data Catalog** as the metastore to resolve table schemas and partitions.
 
 
-## Data Quality Checks
-To ensure the reliability and correctness of analytical results, multiple **data quality validation checks** are performed directly in Amazon Athena. These checks help detect ingestion errors, transformation issues, and anomalous business values.
-
-
-###  Null & Missing Values Check
-
-**Business Risk:**  
-Null values in key fields can break dashboards and lead to incorrect aggregations.
-
-```sql
-SELECT 
-    COUNT(*) AS total_rows,
-    SUM(CASE WHEN date IS NULL THEN 1 ELSE 0 END) AS null_dates,
-    SUM(CASE WHEN revenue IS NULL THEN 1 ELSE 0 END) AS null_revenue,
-    SUM(CASE WHEN country IS NULL THEN 1 ELSE 0 END) AS null_country,
-    SUM(CASE WHEN product_category IS NULL THEN 1 ELSE 0 END) AS null_product_category
-FROM db_bikestore.bike_orders;
-```
-
-### Invalid Revenue & Profit Check
-
-Business Risk:
-Negative revenue or profit usually indicates corrupted data or ingestion issues.
-```sql
-SELECT *
-FROM db_bikestore.bike_orders
-WHERE revenue < 0
-   OR profit < 0;
-```
-
-### Logical Consistency Check (Revenue vs Cost)
-
-**Business Rule:**
-Revenue should always be greater than or equal to cost.
-```sql
-SELECT *
-FROM db_bikestore.bike_orders
-WHERE revenue < cost;
-```
-
-
-### Duplicate Records Detection
-
-**Business Risk:**
-Duplicate rows inflate revenue and distort all KPIs.
-```sql
-SELECT 
-    date,
-    product,
-    country,
-    COUNT(*) AS duplicate_count
-FROM db_bikestore.bike_orders
-GROUP BY date, product, country
-HAVING COUNT(*) > 1;
-```
-
-
-### Date Format Validation
-
-**Business Risk:**
-Malformed dates break time-series analysis and partition filtering.
-```sql
-SELECT *
-FROM db_bikestore.bike_orders
-WHERE TRY_CAST(date AS DATE) IS NULL;
-```
-
 
 ##  Business-Oriented Athena Queries
 
-Below are real-world business queries that can be executed on the `bike_orders` Athena table.
+Below are real-world business queries that can be executed on the `orders` Athena table.
 
 ---
 
@@ -415,10 +352,11 @@ Which countries generate the highest revenue?
 SELECT 
     country,
     SUM(revenue) AS total_revenue
-FROM db_bikestore.bike_orders
+FROM db_bikesales.orders
 GROUP BY country
 ORDER BY total_revenue DESC;
 ```
+<img width="1513" height="425" alt="image" src="https://github.com/user-attachments/assets/bc08e718-f7a0-4041-9d42-8dba18034201" />
 
 
 ### 2) Monthly Sales Trend
@@ -427,12 +365,14 @@ How does revenue evolve over time?
 ```sql
 SELECT 
     year,
-    month,
+    MONTH(date_parse(date, '%Y-%m-%d')) AS month,
     SUM(revenue) AS monthly_revenue
-FROM db_bikestore.bike_orders
-GROUP BY year, month
-ORDER BY year, month;
+FROM db_bikes.orders
+GROUP BY year, MONTH(date_parse(date, '%Y-%m-%d'))
+ORDER BY year, MONTH(date_parse(date, '%Y-%m-%d'))
 ```
+<img width="1476" height="648" alt="image" src="https://github.com/user-attachments/assets/e765f938-a70c-4e40-9101-1abab0ff7150" />
+
 
 ### 3️) Most Profitable Product Categories
 Which product categories generate the most profit?
@@ -441,10 +381,12 @@ Which product categories generate the most profit?
 SELECT 
     product_category,
     SUM(profit) AS total_profit
-FROM db_bikestore.bike_orders
+FROM db_bikesales.orders
 GROUP BY product_category
 ORDER BY total_profit DESC;
 ```
+<img width="1464" height="286" alt="image" src="https://github.com/user-attachments/assets/31e3582e-58c4-4679-82a3-e769c27e924f" />
+
 
 ### 4️) Customer Demographics by Revenue
 Which customer age groups generate the most revenue?
@@ -453,10 +395,11 @@ Which customer age groups generate the most revenue?
 SELECT 
     age_group,
     SUM(revenue) AS total_revenue
-FROM db_bikestore.bike_orders
+FROM db_bikesales.orders
 GROUP BY age_group
 ORDER BY total_revenue DESC;
 ```
+<img width="1473" height="326" alt="image" src="https://github.com/user-attachments/assets/932f180e-1a07-4ff3-a8b7-85f27106aca0" />
 
 
 
