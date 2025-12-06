@@ -59,7 +59,7 @@ Bikes;Mountain Bikes;Mountain-200 Black, 46;1;1252;2295;561;1252;1813
 <a id="architecture-overview"></a>
 ##  Architecture Overview
 
-<img width="853" height="400" alt="Diagramma senza titolo drawio2" src="https://github.com/user-attachments/assets/03a6350a-b5d5-491e-aae2-cf325b8fd249" />
+<img width="853" height="400" alt="Diagramma senza titolo drawio2" src="https://github.com/user-attachments/assets/b4126514-bd98-4b0f-8549-f8de190d8fad" />
 
 
 
